@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask import Flask
 from flask_cors import CORS
- import os
+import os
 
 from app.recommender import (
     recommend_by_query,
