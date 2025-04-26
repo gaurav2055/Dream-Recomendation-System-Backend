@@ -12,7 +12,7 @@ from app.recommender import (
 )
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:3000", "https://lambent-cupcake-a5d59e.netlify.app/"])
+CORS(app, origins=["http://localhost:3000", "https://lambent-cupcake-a5d59e.netlify.app"])
 # Health check
 @app.route("/")
 def home():
