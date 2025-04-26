@@ -1,4 +1,5 @@
 import psycopg2
+import os
 
 def get_connection():
     """
@@ -8,11 +9,11 @@ def get_connection():
     """
     try:
         conn = psycopg2.connect(
-            dbname="travel_db",
-            user="postgres",
-            password="post@Charade@01",
-            host="localhost",
-            port="5432"
+            dbname=os.environ.get("DB_NAME"),
+            user=os.environ.get("DB_USER"),
+            password=os.environ.get("DB_PASS"),
+            host=os.environ.get("DB_HOST"),
+            port=os.environ.get("DB_PORT", "5432")
         )
         print("✅ Connected to PostgreSQL!")
         return conn
