@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask import Flask
 from flask_cors import CORS
+ import os
 
 from app.recommender import (
     recommend_by_query,
@@ -89,4 +90,5 @@ def suggest():
         return {"error": str(e)}, 500
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)  # or change port if needed
+    port = int(os.environ.get("PORT", 5000))  # default for local dev
+    app.run(debug=True, host="0.0.0.0", port=port)  # or change port if needed
