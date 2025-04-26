@@ -10,7 +10,7 @@ from DB.db_setup import get_connection
 conn = get_connection()
 query = """
     SELECT id, name, city, state, country, description, tags,
-        adventure, relax, nature, culture, luxury
+           adventure, relax, nature, culture, luxury
     FROM destinations
 """
 df = pd.read_sql(query, conn)
@@ -24,22 +24,17 @@ df["text"] = df["description"].fillna("") + " " + df["tags_str"].fillna("")
 df["text"] = df["text"].str.lower()
 
 # -----------------------------
-# Text similarity (TF-IDF)
+# Build Vectorizers
 # -----------------------------
 tfidf = TfidfVectorizer(stop_words="english")
 tfidf_matrix = tfidf.fit_transform(df["text"])
-cosine_sim = cosine_similarity(tfidf_matrix)
 
-# -----------------------------
-# Trait similarity (cosine)
-# -----------------------------
 trait_cols = ["adventure", "relax", "nature", "culture", "luxury"]
 scaler = MinMaxScaler()
 traits_matrix = scaler.fit_transform(df[trait_cols].fillna(0))
-trait_sim = cosine_similarity(traits_matrix)
 
 # -----------------------------
-# Helper function to find all matching destinations
+# Helper: Find all matching destinations
 # -----------------------------
 def find_all_destination_matches(query):
     query = query.lower()
@@ -49,56 +44,49 @@ def find_all_destination_matches(query):
         df["state"].str.lower().fillna("").str.contains(query) |
         df["country"].str.lower().fillna("").str.contains(query)
     ]
-    if matches.empty:
-        raise ValueError(f"No match found for '{query}'")
     return matches.index.tolist()
 
 # -----------------------------
-# Recommender functions
+# Recommender Functions
 # -----------------------------
+
 def recommend_by_query(query_text, top_n=5):
-    indexes = find_all_destination_matches(query_text)
-    combined_scores = pd.Series(0, index=df.index)
-    for idx in indexes:
-        combined_scores += cosine_sim[idx]
-    combined_scores = combined_scores.sort_values(ascending=False)
-    return df.iloc[combined_scores.index[1:top_n+1]]
+    idxs = find_all_destination_matches(query_text)
+    if not idxs:
+        return df.sample(top_n)
+
+    user_vector = tfidf.transform([" ".join(df.loc[idxs]["text"])])
+    sim_scores = cosine_similarity(user_vector, tfidf_matrix)[0]
+
+    top_indices = sim_scores.argsort()[::-1][:top_n]
+    return df.iloc[top_indices]
 
 def recommend_hybrid(query_text, top_n=5, alpha=0.7):
-    try:
-        indexes = find_all_destination_matches(query_text)
-    except ValueError:
-        indexes = []
+    idxs = find_all_destination_matches(query_text)
+    if not idxs:
+        return df.sample(top_n)
 
-    combined_scores = pd.Series(0.0, index=df.index)
-    for idx in indexes:
-        text_scores = cosine_sim[idx]
-        trait_scores = trait_sim[idx]
-        final_scores = alpha * text_scores + (1 - alpha) * trait_scores
-        combined_scores += final_scores
+    user_vector_text = tfidf.transform([" ".join(df.loc[idxs]["text"])])
+    user_vector_traits = scaler.transform(df.loc[idxs][trait_cols].fillna(0))
 
-    if indexes:
-        combined_scores /= len(indexes)
+    text_scores = cosine_similarity(user_vector_text, tfidf_matrix)[0]
+    trait_scores = cosine_similarity(user_vector_traits, traits_matrix).mean(axis=0)
 
-    # Exclude exact matches from similar recommendations
-    combined_scores = combined_scores.drop(indexes, errors='ignore')
-    combined_scores = combined_scores.sort_values(ascending=False)
-    similar_indices = combined_scores.index[:top_n]
+    final_scores = alpha * text_scores + (1 - alpha) * trait_scores
 
-    # Create the final combined DataFrame
-    exact_matches_df = df.iloc[indexes] if indexes else pd.DataFrame()
-    similar_df = df.loc[similar_indices]
-    final_results = pd.concat([exact_matches_df, similar_df])
-
-    return final_results.reset_index(drop=True)
+    top_indices = final_scores.argsort()[::-1][:top_n]
+    return df.iloc[top_indices]
 
 def recommend_by_traits(query_text, top_n=5):
-    indexes = find_all_destination_matches(query_text)
-    combined_scores = pd.Series(0, index=df.index)
-    for idx in indexes:
-        combined_scores += trait_sim[idx]
-    combined_scores = combined_scores.sort_values(ascending=False)
-    return df.iloc[combined_scores.index[1:top_n+1]]
+    idxs = find_all_destination_matches(query_text)
+    if not idxs:
+        return df.sample(top_n)
+
+    user_vector_traits = scaler.transform(df.loc[idxs][trait_cols].fillna(0))
+    sim_scores = cosine_similarity(user_vector_traits, traits_matrix).mean(axis=0)
+
+    top_indices = sim_scores.argsort()[::-1][:top_n]
+    return df.iloc[top_indices]
 
 def recommend_by_vibe(user_traits, top_n=5):
     required = ["adventure", "relax", "nature", "culture", "luxury"]
@@ -108,7 +96,8 @@ def recommend_by_vibe(user_traits, top_n=5):
 
     user_vector = pd.DataFrame([user_traits])[required].astype(float)
     user_scaled = scaler.transform(user_vector)
+
     sim_scores = cosine_similarity(user_scaled, traits_matrix)[0]
-    sim_scores = list(enumerate(sim_scores))
-    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)[:top_n]
-    return df.iloc[[i[0] for i in sim_scores]]
+
+    top_indices = sim_scores.argsort()[::-1][:top_n]
+    return df.iloc[top_indices]
